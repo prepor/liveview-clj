@@ -1,0 +1,10 @@
+{:deps {cheshire {:mvn/version "5.8.1"}
+        org.clojure/core.async {:mvn/version "0.4.490"}
+
+        ;; examples
+        hiccup {:mvn/version "1.0.5"}
+        aleph {:mvn/version "0.4.6"}
+        ataraxy {:mvn/version "0.4.2"}
+        integrant {:mvn/version "0.7.0"}
+        integrant/repl {:mvn/version "0.3.1"}}
+ :paths ["src" "resources"]}
