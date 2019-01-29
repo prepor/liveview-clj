@@ -1,6 +1,5 @@
 (ns example.todo.handler
   (:require [example.todo.ui :as ui]
-            [hiccup2.core :as hiccup2]
             [integrant.core :as ig]
             [liveview.core :as liveview]))
 
@@ -52,8 +51,7 @@
    liveview
    {:init (fn [req] state)
     :render (fn [data]
-              (str (hiccup2/html (ui/layout liveview
-                                            (ui/app data)))))
+              (liveview/render (ui/layout liveview
+                                          (ui/app data))))
     :on-event (fn [state type payload]
-                (event state type payload))
-    :on-mount (fn [instance])}))
+                (event state type payload))}))

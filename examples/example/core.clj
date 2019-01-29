@@ -34,7 +34,7 @@
   (liveview/start opts))
 
 (defmethod ig/init-key ::liveview-ws [_ {:keys [liveview]}]
-  (liveview-ws/handler liveview))
+  (liveview/ws-handler liveview liveview-ws/adapter))
 
 (defmethod ig/halt-key! ::liveview [_ liveview]
   (liveview/stop liveview))
