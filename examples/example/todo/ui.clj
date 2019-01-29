@@ -57,7 +57,7 @@
 (defn todo-checkbox [id completed]
   [:input.toggle {:type "checkbox"
                   :checked completed
-                  :onchange (js (.sendEvent LiveView "toggle-todo" {id (clj id)}) (return true))}])
+                  :onchange (js (LV.sendEvent "toggle-todo" {id (clj id)}) (return true))}])
 
 (defn todo-display-filter [completed display-type]
   (case display-type
@@ -71,22 +71,22 @@
                           (todo-display-filter completed display-type))}}
    [:div.view
     (todo-checkbox id completed)
-    [:label {:ondblclick (js (.sendEvent LiveView "edit-todo" {id (clj id)}) (return true))}
+    [:label {:ondblclick (js (LV.sendEvent "edit-todo" {id (clj id)}) (return true))}
      title]
-    [:button.destroy {:onclick (js (.sendEvent LiveView "delete-todo" {id (clj id)}) (return true))}]]
+    [:button.destroy {:onclick (js (LV.sendEvent "delete-todo" {id (clj id)}) (return true))}]]
    [:input.edit {:type "text"
                  :style {:display (display-elem editing?)}
                  :value title
-                 :onblur (js (.sendEvent LiveView "edit-todo-finished"
+                 :onblur (js (LV.sendEvent "edit-todo-finished"
                                          {id (clj id)
                                           title (aget event "target" "value")})
                              (return true))
                  :onkeydown (js (if (= 13 (aget event "which"))
-                                  (.sendEvent LiveView "edit-todo-finished"
+                                  (LV.sendEvent "edit-todo-finished"
                                               {id (clj id)
                                                title (aget event "target" "value")})
                                   (if (= 27 (aget event "which"))
-                                    (.sendEvent LiveView "edit-todo-revert"
+                                    (LV.sendEvent "edit-todo-revert"
                                                 {id (clj id)})))
                                 (return true))}]])
 
@@ -99,14 +99,14 @@
                        :value ""
                        :placeholder "What needs to be done?"
                        :onkeydown (js (if (= 13 (aget event "which"))
-                                        (.sendEvent LiveView "new-todo" {title (aget event "target" "value")})) (return true))}]]
+                                        (LV.sendEvent "new-todo" {title (aget event "target" "value")})) (return true))}]]
     [:div {:style {:display (display-elem (todos-any? todos))}}
      [:section.main
       [:span
        (let [all-completed? (todos-all-completed? todos)]
          [:input#toggle-all.toggle-all {:type "checkbox"
                                         :checked all-completed?
-                                        :onchange (js (.sendEvent LiveView "toggle-all" {bool (clj all-completed?)}) (return true))}])
+                                        :onchange (js (LV.sendEvent "toggle-all" {bool (clj all-completed?)}) (return true))}])
        [:label {:for "toggle-all"} "Mark all as complete"]]
       [:ul.todo-list
        (for [v (todos-all todos)]
@@ -117,18 +117,18 @@
        (items-left todos)]
       [:ul.filters
        [:li [:a {:class (selected-class :all display-type)
-                 :onclick (js (.sendEvent LiveView "set-display-type" {type "all"})
+                 :onclick (js (LV.sendEvent "set-display-type" {type "all"})
                               (return true))}
              "All"]]
        [:li [:a {:class (selected-class :active display-type)
-                 :onclick (js (.sendEvent LiveView "set-display-type" {type "active"})
+                 :onclick (js (LV.sendEvent "set-display-type" {type "active"})
                               (return true))}
              "Active"]]
        [:li [:a {:class (selected-class :completed display-type)
-                 :onclick (js (.sendEvent LiveView "set-display-type" {type "completed"})
+                 :onclick (js (LV.sendEvent "set-display-type" {type "completed"})
                               (return true))}
              "Completed"]]]
-      [:button.clear-completed {:onclick (js (.sendEvent LiveView "clear-completed" {})
+      [:button.clear-completed {:onclick (js (LV.sendEvent "clear-completed" {})
                                              (return true))
                                 :style {:display (display-elem (todos-any-completed? todos))}}
        "Clear completed"]]]]])

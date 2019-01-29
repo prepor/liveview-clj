@@ -47,9 +47,6 @@
                     (into {}))]
     (swap! state assoc :todos todos')))
 
-(defmethod ig/init-key :example.todo/state [_ _]
-  (atom {:todos {}}))
-
 (defmethod ig/init-key :example.todo/handler [_ {:keys [liveview state]}]
   (liveview/handler
    liveview
@@ -58,6 +55,5 @@
               (str (hiccup2/html (ui/layout liveview
                                             (ui/app data)))))
     :on-event (fn [state type payload]
-                (prn "---EVENT" type payload)
                 (event state type payload))
     :on-mount (fn [instance])}))

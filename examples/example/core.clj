@@ -9,7 +9,8 @@
             [ring.middleware.content-type :refer [wrap-content-type]]
             [ring.middleware.default-charset :refer [wrap-default-charset]]
             [hiccup2.core :as hiccup2]
-            [com.reasonr.scriptjure :refer [js]]))
+            [com.reasonr.scriptjure :refer [js]]
+            [clojure.tools.logging :as logger]))
 
 (defn increment [data]
   [:div
@@ -38,8 +39,11 @@
 (defmethod ig/halt-key! ::liveview [_ liveview]
   (liveview/stop liveview))
 
+(defmethod ig/init-key ::state [_ init]
+  (atom init))
+
 (def config
-  {:example.todo/state {}
+  {[:example.todo/state ::state] {:todos {}}
    :example.todo/handler {:liveview (ig/ref ::liveview)
                           :state (ig/ref :example.todo/state)}
    ::router {:routes {"/todo" [:todo]
@@ -50,6 +54,18 @@
              :options {:port 8000}}
    ::liveview {:ws-url "ws://localhost:8000/ws"}
    ::liveview-ws {:liveview (ig/ref ::liveview)}})
+
+(def system (atom nil))
+
+(defn stop-system []
+  (ig/halt! @system))
+
+(defn -main [& args]
+  (ig/load-namespaces config)
+  (reset! system (ig/init config))
+  (logger/info "System started")
+  (.addShutdownHook (Runtime/getRuntime) (Thread. #'stop-system))
+  (.. Thread currentThread join))
 
 (comment
   (require 'integrant.repl)

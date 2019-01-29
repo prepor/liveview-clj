@@ -1,38 +1,12 @@
 (ns liveview.core
   (:require [cheshire.core :as json]
             [clojure.core.async :as a]
-            [clojure.string :as str]
+            [clojure.java.io :as io]
             [clojure.tools.logging :as logger]
             [hiccup2.core :as hiccup])
   (:import [java.util Timer TimerTask]))
 
-(comment
-  render data => dom
-  => send dom
-  render data' => dom'
-  => send dom dom'
-  ;; questions:
-  ;; - disconnection logic?
-  ;; - reconnection logic?
-  ;; - form validation. replace users data?
-  ;; - graceful shutdown? send state to a clients before shutdown? versioning? spec integrations? migrations?
-  ;; - server crash recovery?
-
-
-  ;; additional library actions + helpers on socket:
-  ;; - put-flash
-  ;; - redirect
-
-  ;; (reconnect? socket)
-
-  (liveview (fn [req socket]
-              {:state (atom {})
-               :handler (fn [event])
-               :render (fn [data])
-               :on-disconnect (fn [])})))
-
 (defn start [opts]
-  (prn "---START" opts)
   {:timer (Timer.)
    :opts opts
    :instances (atom {})})
@@ -44,57 +18,17 @@
 
 (def ^:dynamic *id*)
 
-(defn js [{:keys [id ws-url]}]
-  (hiccup/raw "
-var LiveView = {
-  id: \"" id "\",
-  socket: new WebSocket(\"" ws-url "?" id"\"),
-  sendEvent: function(type, event) {
-console.log(event);
- if (this.socket.readyState != 1) {
-      console.log(\"Can't send an event, socket is not connected\")
-    } else {
-      this.socket.send(JSON.stringify({type: \"event\", event: type, payload: event}));
-    }
-  }
-};
-LiveView.socket.onmessage = function(e) {
-  var data = JSON.parse(e.data);
-  if (data.type == \"rerender\"){
-    morphdom(document.documentElement, data.value);
-  }
-};"))
+(defn js-runtime []
+  (slurp (io/resource "liveview/runtime.js")))
+
+(defn js-init [id ws-url]
+  (str "var LV = LiveView(\"" ws-url "?" id "\")"))
 
 (defn inject [liveview]
   (list [:script {:src "https://cdn.jsdelivr.net/npm/morphdom@2.3.3/dist/morphdom-umd.min.js"}]
-        [:script (js {:id *id*
-                      :ws-url (get-in liveview [:opts :ws-url])})]))
-
-(defn render-event-path [path]
-  (->> (for [a path]
-         (str "['" (name a) "']"))
-       (str/join)))
-
-(defn event-description
-  ([desc] (event-description [] desc))
-  ([path desc]
-   (str "{"
-        (->> (mapcat
-              (fn [attr]
-                (cond
-                  (keyword? attr)
-                  [(str (name attr) ":event" (render-event-path (conj path attr)))]
-
-                  (map? attr)
-                  (for [[attr desc] attr]
-                    (str (name attr) ":" (event-description (conj path attr) desc)))))
-              desc)
-             (str/join ","))
-        "}")))
-
-;; (defn msg-clb [type desc]
-;;   (str "LiveView.sendEvent(\"" type "\", \"" (event-description desc) "\"); return true"))
-
+        [:script (hiccup/raw (js-runtime))]
+        [:script (hiccup/raw (js-init *id*
+                                      (get-in liveview [:opts :ws-url])))]))
 
 (defn make-instance [state {:keys [render on-event] :as opts
                             :or {on-event (fn [_ _]
@@ -117,6 +51,8 @@ LiveView.socket.onmessage = function(e) {
     (a/go-loop []
       (if-let [v (a/<! in)]
         (do
+          (logger/debug "Event" {:instance id
+                                 :event v})
           (case (:type v)
             "event" (on-event state (:event v) (:payload v))
             (logger/warn "Unknown instance event" v))
