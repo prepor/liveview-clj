@@ -5,39 +5,25 @@
             [integrant.core :as ig]
             [liveview.core :as liveview]
             [liveview.ws.aleph :as liveview-ws]
-            [ring.middleware.resource :refer [wrap-resource]]))
+            [ring.middleware.resource :refer [wrap-resource]]
+            [ring.middleware.content-type :refer [wrap-content-type]]
+            [ring.middleware.default-charset :refer [wrap-default-charset]]
+            [hiccup2.core :as hiccup2]
+            [com.reasonr.scriptjure :refer [js]]))
 
-(defn layout [liveview body]
-  [:html
-   [:head
-    [:title "Hello world"]
-    [:link {:rel "stylesheet"
-            :href "/css/base.css"}]
-    [:link {:rel "stylesheet"
-            :href "/css/todo.css"}]
-    (liveview/inject liveview)]
-   [:body body]])
-
-(defmethod ig/init-key ::handler [_ {:keys [liveview]}]
-  (liveview/handler
-   liveview
-   {:init (fn [req]
-            (atom 0))
-    :render (fn [state]
-              (hiccup/html (layout liveview
-                                   [:div
-                                    [:span state]
-                                    [:button {:onclick (liveview/msg-clb "inc")} "Increment!"]])))
-    :on-event (fn [state event]
-                (swap! state inc))
-    :on-mount (fn [instance])}))
+(defn increment [data]
+  [:div
+   [:span data]
+   [:button {:onclick ""#_(liveview/msg-clb "inc" [])} "Increment!"]])
 
 (defmethod ig/init-key ::router [_ opts]
   (ataraxy/handler opts))
 
 (defmethod ig/init-key ::server [_ {:keys [handler options]}]
   (http/start-server (-> handler
-                         (wrap-resource "/example/public"))
+                         (wrap-resource "/example/public")
+                         (wrap-content-type)
+                         (wrap-default-charset "UTF-8"))
                      options))
 
 (defmethod ig/halt-key! ::server [_ server]
@@ -53,10 +39,12 @@
   (liveview/stop liveview))
 
 (def config
-  {::handler {:liveview (ig/ref ::liveview)}
-   ::router {:routes {"/" [:index]
+  {:example.todo/state {}
+   :example.todo/handler {:liveview (ig/ref ::liveview)
+                          :state (ig/ref :example.todo/state)}
+   ::router {:routes {"/todo" [:todo]
                       "/ws" [:liveview]}
-             :handlers {:index (ig/ref ::handler)
+             :handlers {:todo (ig/ref :example.todo/handler)
                         :liveview (ig/ref ::liveview-ws)}}
    ::server {:handler (ig/ref ::router)
              :options {:port 8000}}
@@ -66,4 +54,6 @@
 (comment
   (require 'integrant.repl)
   (integrant.repl/set-prep! (constantly config))
+
+  (integrant.repl/reset)
   )

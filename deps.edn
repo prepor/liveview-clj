@@ -2,9 +2,11 @@
         org.clojure/core.async {:mvn/version "0.4.490"}
 
         ;; examples
-        hiccup {:mvn/version "1.0.5"}
+        hiccup {:mvn/version "2.0.0-alpha1"}
         aleph {:mvn/version "0.4.6"}
         ataraxy {:mvn/version "0.4.2"}
         integrant {:mvn/version "0.7.0"}
-        integrant/repl {:mvn/version "0.3.1"}}
+        integrant/repl {:mvn/version "0.3.1"}
+        scriptjure {:mvn/version "0.1.24"}
+        ring/ring-headers {:mvn/version "0.3.0"}}
  :paths ["src" "resources"]}

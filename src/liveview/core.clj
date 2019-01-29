@@ -1,7 +1,9 @@
 (ns liveview.core
   (:require [cheshire.core :as json]
             [clojure.core.async :as a]
-            [clojure.tools.logging :as logger])
+            [clojure.string :as str]
+            [clojure.tools.logging :as logger]
+            [hiccup2.core :as hiccup])
   (:import [java.util Timer TimerTask]))
 
 (comment
@@ -43,11 +45,12 @@
 (def ^:dynamic *id*)
 
 (defn js [{:keys [id ws-url]}]
-  (str "
+  (hiccup/raw "
 var LiveView = {
   id: \"" id "\",
   socket: new WebSocket(\"" ws-url "?" id"\"),
   sendEvent: function(type, event) {
+console.log(event);
  if (this.socket.readyState != 1) {
       console.log(\"Can't send an event, socket is not connected\")
     } else {
@@ -67,8 +70,30 @@ LiveView.socket.onmessage = function(e) {
         [:script (js {:id *id*
                       :ws-url (get-in liveview [:opts :ws-url])})]))
 
-(defn msg-clb [type]
-  (str "LiveView.sendEvent(\"" type "\", event); return true"))
+(defn render-event-path [path]
+  (->> (for [a path]
+         (str "['" (name a) "']"))
+       (str/join)))
+
+(defn event-description
+  ([desc] (event-description [] desc))
+  ([path desc]
+   (str "{"
+        (->> (mapcat
+              (fn [attr]
+                (cond
+                  (keyword? attr)
+                  [(str (name attr) ":event" (render-event-path (conj path attr)))]
+
+                  (map? attr)
+                  (for [[attr desc] attr]
+                    (str (name attr) ":" (event-description (conj path attr) desc)))))
+              desc)
+             (str/join ","))
+        "}")))
+
+;; (defn msg-clb [type desc]
+;;   (str "LiveView.sendEvent(\"" type "\", \"" (event-description desc) "\"); return true"))
 
 
 (defn make-instance [state {:keys [render on-event] :as opts
@@ -76,23 +101,27 @@ LiveView.socket.onmessage = function(e) {
                                             (logger/warn "Undefined event handler"))}}]
   (let [out (a/chan 100)
         in (a/chan 100)
-        instance {:id (new-id)
+        id (new-id)
+        instance {:id id
                   :state state
                   :in in
                   :out out
                   :opts opts
                   :mounted? (atom false)}]
-    (add-watch state ::watcher
+    (add-watch state [::watcher id]
                (fn [_ _ _ state']
                  (a/>!! out (json/generate-string
                              {:type "rerender"
-                              :value (render state')}))))
+                              :value (binding [*id* id]
+                                       (render state'))}))))
     (a/go-loop []
-      (when-let [v (a/<! in)]
-        (case (:type v)
-          "event" (on-event state (:payload v))
-          (logger/warn "Unknown instance event" v))
-        (recur)))
+      (if-let [v (a/<! in)]
+        (do
+          (case (:type v)
+            "event" (on-event state (:event v) (:payload v))
+            (logger/warn "Unknown instance event" v))
+          (recur))
+        (remove-watch state [::watcher id])))
     instance))
 
 (defn stop-instance [{:keys [in out]}]
@@ -126,6 +155,6 @@ LiveView.socket.onmessage = function(e) {
     (let [instance (make-instance (init req) opts)]
       (register-instance liveview instance)
       {:status 200
-       :headers {:content-type "text/html"}
+       :headers {"Content-Type" "text/html"}
        :body (binding [*id* (:id instance)]
                (render @(:state instance)))})))
