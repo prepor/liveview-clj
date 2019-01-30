@@ -45,11 +45,15 @@
 (def config
   {[:example.todo/state ::state] {:todos {}}
    :example.todo/handler {:liveview (ig/ref ::liveview)
-                          :state (ig/ref :example.todo/state)}
+                          ;; :state (ig/ref :example.todo/state)
+                          }
+   :example.increment/handler {:liveview (ig/ref ::liveview)}
    ::router {:routes {"/todo" [:todo]
+                      "/increment" [:increment]
                       "/ws" [:liveview]}
              :handlers {:todo (ig/ref :example.todo/handler)
-                        :liveview (ig/ref ::liveview-ws)}}
+                        :liveview (ig/ref ::liveview-ws)
+                        :increment (ig/ref :example.increment/handler)}}
    ::server {:handler (ig/ref ::router)
              :options {:port 8000}}
    ::liveview {:ws-url "ws://localhost:8000/ws"}

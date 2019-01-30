@@ -23,14 +23,17 @@
 (defn js-runtime []
   (slurp (io/resource "liveview/runtime.js")))
 
-(defn js-init [id ws-url]
-  (str "var LV = LiveView(\"" ws-url "?" id "\")"))
+(defn js-init [id {:keys [ws-url ws-path]}]
+  (if ws-url
+    (str "var LV = LiveView(\"" ws-url "?" id "\")")
+    ;; FIXME schema
+    (str "var LV = LiveView(\"ws://\" + location.host + \"" ws-path "?" id "\")")))
 
 (defn inject [liveview]
   (list [:script {:src "https://cdn.jsdelivr.net/npm/morphdom@2.3.3/dist/morphdom-umd.min.js"}]
         [:script (hiccup/raw (js-runtime))]
         [:script (hiccup/raw (js-init *id*
-                                      (get-in liveview [:opts :ws-url])))]))
+                                      (:opts liveview)))]))
 
 (defn expire-task [instances id]
   (proxy [TimerTask] []
@@ -51,18 +54,21 @@
 (defn deregister-instance [{:keys [instances]} id]
   (swap! instances dissoc id))
 
-(defn start-instance [liveview state
-                      {:keys [render on-event on-mount on-disconnect]
+(defn start-instance [liveview
+                      {:keys [state render on-event on-mount on-disconnect]
                        :as opts
                        :or {on-event (fn [_ _]
-                                       (logger/warn "Undefined event handler"))}}]
+                                       (logger/warn "Undefined event handler"))
+                            state (atom nil)}}]
   (let [id (new-id)
+        prev-state (atom @state)
         rerender (fn [sink state']
-                   (a/>!! sink (json/generate-string
-                                {:type "rerender"
-                                 :value (binding [*id* id]
-                                          (render state'))})))
-        initial-state (atom @state)
+                   (when (not= @prev-state state')
+                     (reset! prev-state state')
+                     (a/>!! sink (json/generate-string
+                                  {:type "rerender"
+                                   :value (binding [*id* id]
+                                            (render state'))}))))
         mounted? (atom false)
         stop (atom (fn []))
         on-mount'
@@ -70,9 +76,7 @@
           (logger/debug "Mount" {:instance id})
           (reset! mounted? true)
           (when on-mount (on-mount source sink))
-          (when (not= @state @initial-state)
-            (rerender sink @state))
-          (reset! initial-state nil)
+          (rerender sink @state)
           (add-watch state [::watcher id]
                      (fn [_ _ _ state']
                        (rerender sink state')))
@@ -100,6 +104,7 @@
                       (deregister-instance liveview id))))]
             (reset! stop (fn []
                            (a/close! sink)
+                           (a/close! source)
                            (a/<!! worker)))))
         instance {:id id
                   :state state
@@ -114,13 +119,10 @@
 (defn render [dom]
   (str (hiccup/html dom)))
 
-(defn handler [liveview {:keys [init]
-                         :or {init (fn [] (atom nil))}
-                         :as opts}]
-  (fn [req]
-    {:status 200
-     :headers {"Content-Type" "text/html"}
-     :body (start-instance liveview (init req) opts)}))
+(defn page [liveview req opts]
+  {:status 200
+   :headers {"Content-Type" "text/html"}
+   :body (start-instance liveview opts)})
 
 (defn ws-handler [liveview adapter]
   (fn [req]

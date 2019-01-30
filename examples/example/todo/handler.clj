@@ -46,12 +46,13 @@
                     (into {}))]
     (swap! state assoc :todos todos')))
 
-(defmethod ig/init-key :example.todo/handler [_ {:keys [liveview state]}]
-  (liveview/handler
-   liveview
-   {:init (fn [req] state)
-    :render (fn [data]
-              (liveview/render (ui/layout liveview
-                                          (ui/app data))))
-    :on-event (fn [state type payload]
-                (event state type payload))}))
+(defmethod ig/init-key :example.todo/handler [_ {:keys [liveview]}]
+  (fn [req]
+    (->>
+     {:state (atom {:todos {}})
+      :render (fn [data]
+                (liveview/render (ui/layout liveview
+                                            (ui/app data))))
+      :on-event (fn [state type payload]
+                  (event state type payload))}
+     (liveview/page liveview req))))
