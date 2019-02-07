@@ -12,9 +12,9 @@
    :instances (atom {})})
 
 (defn stop [{:keys [timer instances]}]
-  (.cancel timer)
   (doseq [i (vals @instances)]
-    ((:stop i))))
+    ((:stop i)))
+  (.cancel timer))
 
 (defn new-id [] (str (java.util.UUID/randomUUID)))
 
@@ -22,6 +22,9 @@
 
 (defn js-runtime []
   (slurp (io/resource "liveview/runtime.js")))
+
+(defn morphdom-runtime []
+  (slurp (io/resource "liveview/morphdom.js")))
 
 (defn js-init [id {:keys [ws-url ws-path]}]
   (if ws-url
@@ -35,84 +38,99 @@
         [:script (hiccup/raw (js-init *id*
                                       (:opts liveview)))]))
 
-(defn expire-task [instances id]
+(defn expire-task [clb]
   (proxy [TimerTask] []
-    (run []
-      (swap! instances (fn [instances']
-                         (if-let [{:keys [mounted?] :as instance}
-                                  (get instances' id)]
-                           (if @mounted?
-                             instances'
-                             (dissoc instances' id))
-                           instances'))))))
+    (run [] (clb))))
 
-(defn register-instance [{:keys [instances timer opts]}
+(defn register-instance [{:keys [instances timer]}
                          {:keys [id] :as instance}]
-  (swap! instances assoc id instance)
-  (.schedule timer (expire-task instances id) (get opts :mount-wait 5000)))
+  (swap! instances assoc id instance))
 
 (defn deregister-instance [{:keys [instances]} id]
   (swap! instances dissoc id))
 
+(defn set-expire-task [{:keys [timer]} clb timeout]
+  (let [task (expire-task clb)]
+    (.schedule timer task timeout)
+    task))
+
 (defn start-instance [liveview
-                      {:keys [state render on-event on-mount on-disconnect]
+                      {:keys [render on-event on-mount on-disconnect
+                              mount-timeout]
+                       external-state :state
                        :as opts
                        :or {on-event (fn [_ _]
                                        (logger/warn "Undefined event handler"))
-                            state (atom nil)}}]
+                            external-state (atom nil)
+                            mount-timeout 5000}}]
   (let [id (new-id)
-        prev-state (atom @state)
+        prev-external-state (atom @external-state)
         rerender (fn [sink state']
-                   (when (not= @prev-state state')
-                     (reset! prev-state state')
+                   (when (not= @prev-external-state state')
+                     (reset! prev-external-state state')
                      (a/>!! sink (json/generate-string
                                   {:type "rerender"
                                    :value (binding [*id* id]
                                             (render state'))}))))
-        mounted? (atom false)
-        stop (atom (fn []))
-        on-mount'
-        (fn [{:keys [sink source]}]
-          (logger/debug "Mount" {:instance id})
-          (reset! mounted? true)
-          (when on-mount (on-mount source sink))
-          (rerender sink @state)
-          (add-watch state [::watcher id]
-                     (fn [_ _ _ state']
-                       (rerender sink state')))
-          (let [worker
-                (a/go-loop []
-                  (if-let [v (a/<! source)]
-                    (do
-                      (try
-                        (let [v' (json/parse-string v true)]
-                          (logger/debug "Event" {:instance id
-                                                 :event v'})
-                          (case (:type v')
-                            "event" (on-event state (:event v') (:payload v'))
-                            (logger/warn "Unknown event type" {:instance id
-                                                               :event v'})))
-                        (catch Exception e
-                          (logger/error e "Error during event handling" {:instance id
-                                                                         :event v})))
-                      (recur))
-                    (do
-                      (logger/debug "Disconnect" {:instance id})
-                      (reset! mounted? false)
-                      (remove-watch state [::watcher id])
-                      (when on-disconnect (on-disconnect))
-                      (deregister-instance liveview id))))]
-            (reset! stop (fn []
-                           (a/close! sink)
-                           (a/close! source)
-                           (a/<!! worker)))))
+        state (atom nil)
         instance {:id id
-                  :state state
-                  :opts opts
-                  :on-mount on-mount'
-                  :mounted? mounted?
-                  :stop (fn [] (@stop))}]
+                  :on-mount (fn [socket] ((:on-mount @state) socket))
+                  :stop (fn [] ((:stop @state)))}]
     (register-instance liveview instance)
+    (letfn [(initialized []
+              (let [expire-task (set-expire-task liveview disconnected mount-timeout)]
+                {:name :initialized
+                 :on-mount (fn [socket]
+                             (.cancel expire-task)
+                             (when on-mount (on-mount socket))
+                             (reset! state (mounted socket)))
+                 :stop (fn [] (.cancel expire-task))}))
+            (mounted [{:keys [sink source]}]
+              (logger/debug "Mounted" {:instance id})
+              (rerender sink @external-state)
+              (add-watch external-state [::watcher id]
+                         (fn [_ _ _ state']
+                           (rerender sink state')))
+              (let [worker
+                    (a/go-loop []
+                      (if-let [v (a/<! source)]
+                        (do
+                          (try
+                            (let [v' (json/parse-string v true)]
+                              (logger/debug "Event" {:instance id
+                                                     :event v'})
+                              (case (:type v')
+                                "event" (on-event external-state
+                                                  (:event v') (:payload v'))
+                                (logger/warn "Unknown event type" {:instance id
+                                                                   :event v'})))
+                            (catch Exception e
+                              (logger/error e "Error during event handling" {:instance id
+                                                                             :event v})))
+                          (recur))
+                        (do
+                          (remove-watch external-state [::watcher id])
+                          (reset! state (dismounted)))))]
+                {:name :mounted
+                 :on-mount (fn [_] (throw (Exception. "Double mount. (Race condition?)")))
+                 :stop (fn []
+                         (remove-watch external-state [::watcher id])
+                         (a/close! sink)
+                         (a/close! source)
+                         (a/<!! worker))}))
+            (dismounted []
+              (logger/debug "Dismounted" {:instance id})
+              (let [expire-task (set-expire-task liveview disconnected mount-timeout)]
+                {:name :dismounted
+                 :on-mount (fn [socket]
+                             (.cancel expire-task)
+                             (reset! state (mounted socket)))
+                 :stop (fn [] (.cancel expire-task))}))
+            (disconnected []
+              (logger/debug "Disconnected" {:instance id})
+              (when on-disconnect (on-disconnect))
+              (deregister-instance liveview id))]
+      (reset! state (initialized)))
     (binding [*id* id]
       (render @state))))
 

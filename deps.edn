@@ -13,4 +13,10 @@
     integrant {:mvn/version "0.7.0"}
     integrant/repl {:mvn/version "0.3.1"}
     scriptjure {:mvn/version "0.1.24"}
-    ring/ring-headers {:mvn/version "0.3.0"}}}}}
+    ring/ring-headers {:mvn/version "0.3.0"}
+
+    org.slf4j/slf4j-api {:mvn/version "1.7.25"}
+    org.slf4j/log4j-over-slf4j {:mvn/version "1.7.25"}
+    org.slf4j/jcl-over-slf4j {:mvn/version "1.7.25"}
+    org.slf4j/jul-to-slf4j {:mvn/version "1.7.25"}
+    ch.qos.logback/logback-classic {:mvn/version "1.2.3"}}}}}
