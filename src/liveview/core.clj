@@ -132,7 +132,7 @@
               (deregister-instance liveview id))]
       (reset! state (initialized)))
     (binding [*id* id]
-      (render @state))))
+      (render @external-state))))
 
 (defn render [dom]
   (str (hiccup/html dom)))
