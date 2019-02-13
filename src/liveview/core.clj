@@ -82,11 +82,11 @@
                 {:name :initialized
                  :on-mount (fn [socket]
                              (.cancel expire-task)
-                             (when on-mount (on-mount socket))
                              (reset! state (mounted socket)))
                  :stop (fn [] (.cancel expire-task))}))
-            (mounted [{:keys [sink source]}]
+            (mounted [{:keys [sink source] :as socket}]
               (logger/debug "Mounted" {:instance id})
+              (when on-mount (on-mount socket))
               (rerender sink @external-state)
               (add-watch external-state [::watcher id]
                          (fn [_ _ _ state']
